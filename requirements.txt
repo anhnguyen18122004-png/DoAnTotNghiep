@@ -1,0 +1,9 @@
+pandas>=2.0
+numpy
+pyarrow
+openpyxl
+sqlalchemy>=2.0
+pytest
+presidio-analyzer
+spacy
+# python -m spacy download xx_ent_wiki_sm
