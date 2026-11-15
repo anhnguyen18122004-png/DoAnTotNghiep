@@ -5,8 +5,9 @@ DATA = ROOT / "data"
 BRONZE = DATA / "bronze"
 SILVER = DATA / "silver"
 OUTPUT = DATA / "output"
+GOLD = DATA / "gold"
 
-for p in (BRONZE, SILVER, OUTPUT):
+for p in (BRONZE, SILVER, GOLD, OUTPUT):
     p.mkdir(parents=True, exist_ok=True)
 
 SAMPLE_SIZE = 200

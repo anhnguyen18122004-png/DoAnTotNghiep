@@ -12,6 +12,10 @@ PATTERNS = {
 }
 
 NAME_HINTS = {
+    "EMAIL": r"(^|_)(email|e_mail|mail)($|_)",
+    "PHONE": r"(^|_)(phone|mobile|telephone|sdt|so_dien_thoai)($|_)",
+    "CCCD": r"(^|_)(cccd|citizen_id|national_id|identity_number)($|_)",
+    "CMND": r"(^|_)(cmnd|id_number)($|_)",
     "PERSON": r"(^|_)(ho_ten|ho_va_ten|hoten|full_?name|name|surname|last_?name|first_?name|ten_khach_hang|ten_kh|ten)($|_)",
     "ID": r"(^|_)(customer_?id|patient_id|employee_?id|user_?id|ma_kh|ma_bn|ma_nv)($|_)",
     "ADDRESS": r"(^|_)(dia_chi|address|addr|noi_o|que_quan|thuong_tru)($|_)",

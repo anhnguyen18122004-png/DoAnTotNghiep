@@ -96,3 +96,37 @@ def test_dp_bounds_and_seed():
     b = laplace_perturb(s, 1.0, 100, 200, seed=1)
     assert a.equals(b) and a.between(100, 200).all()
     assert (dp_histogram(pd.Series(["a"] * 50 + ["b"] * 10), 1.0, seed=0) >= 0).all()
+
+
+def test_detect_cccd_from_numeric_column_name():
+    frame = pd.DataFrame({"cccd": [123456789012, 987654321098]})
+    findings = detect(frame)
+    assert findings[0]["type"] == "CCCD"
+    assert findings[0]["method"] == "column_name"
+
+
+def test_evaluation_reports_k_anonymity_and_profile(tmp_path, monkeypatch):
+    import evaluation
+    frame = pd.DataFrame({"age": [20, 20, 21, 21], "gender": ["F", "F", "M", "M"],
+                          "salary": [10, 10, 20, 20]})
+    findings = [{"column": "salary", "type": "SALARY"}]
+    result = evaluation.evaluate(frame, frame, findings,
+                                 quasi_identifier_columns=["age", "gender"],
+                                 sensitive_attribute_columns=["salary"])
+    assert result["privacy_before"]["k_anonymity"] == 2
+    assert result["privacy_before"]["risk_score"] is not None
+    assert result["profile_before"]["rows"] == 4
+    monkeypatch.setattr(evaluation, "GOLD", tmp_path)
+    saved = evaluation.save_gold(frame, "batch-test", result)
+    assert (saved / "data.parquet").exists()
+    assert (saved / "evaluation.json").exists()
+
+
+def test_ml_privacy_utility_shared_split():
+    from ml_experiment import run_privacy_utility_experiment
+    frame = pd.DataFrame({"age": [20 + i % 8 for i in range(100)],
+                          "group": ["a", "b", "c", "d"] * 25,
+                          "outcome": ["yes", "no"] * 50})
+    result = run_privacy_utility_experiment(frame, frame, "outcome", seed=3, max_rows=100)
+    assert result["train_rows"] + result["test_rows"] == 100
+    assert result["models"]["LogisticRegression"]["before"]["accuracy"] >= 0
