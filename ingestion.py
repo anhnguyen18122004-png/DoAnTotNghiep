@@ -19,7 +19,7 @@ def _sha256(path: Path) -> str:
 
 
 def _store(df: pd.DataFrame, source: str, kind: str, raw: Path | None = None):
-    batch_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    batch_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     batch_dir = BRONZE / batch_id
     batch_dir.mkdir(parents=True)
     manifest = {
