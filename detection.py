@@ -12,19 +12,24 @@ PATTERNS = {
 }
 
 NAME_HINTS = {
-    "EMAIL": r"(^|_)(email|e_mail|mail)($|_)",
-    "PHONE": r"(^|_)(phone|mobile|telephone|sdt|so_dien_thoai)($|_)",
-    "CCCD": r"(^|_)(cccd|citizen_id|national_id|identity_number)($|_)",
-    "CMND": r"(^|_)(cmnd|id_number)($|_)",
-    "PERSON": r"(^|_)(ho_ten|ho_va_ten|hoten|full_?name|name|surname|last_?name|first_?name|ten_khach_hang|ten_kh|ten)($|_)",
+    "PERSON": r"(^|_)(ho_ten|ho_va_ten|hoten|full_?name|name|doctor|bac_si|surname|last_?name|first_?name|ten_khach_hang|ten_kh|ten)($|_)",
     "ID": r"(^|_)(customer_?id|patient_id|employee_?id|user_?id|ma_kh|ma_bn|ma_nv)($|_)",
     "ADDRESS": r"(^|_)(dia_chi|address|addr|noi_o|que_quan|thuong_tru)($|_)",
     "DOB": r"(ngay_sinh|dob|birth)",
     "AGE": r"(^|_)(tuoi|age)($|_)",
     "SALARY": r"(luong|salary|income|thu_nhap)",
+    "CCCD": r"(^|_)(cccd|so_cccd|can_cuoc)($|_)",
+    "CMND": r"(^|_)(cmnd|so_cmnd)($|_)",
 }
 
+NER_SKIP = r"(hospital|benh_vien|insurance|company|cong_ty|provider|medication|condition)"
+
 NER_TO_TYPE = {"PERSON": "PERSON", "LOCATION": "ADDRESS"}
+
+MIN_SHAPE_ROWS = 50
+ORG_RE = re.compile(r"\b(?:and|group|inc|llc|ltd|plc|sons|corp|co|company)\b|bệnh viện|công ty|ngân hàng", re.I)
+ADDR_RE = re.compile(r"^\d{1,4}[\w/]*\s+[^,]+,\s*[^,]+")
+NAME_RE = re.compile(r"^[^\W\d_]+(?:[\s'.-][^\W\d_]+){0,3}$")
 
 
 class NerDetector:
@@ -79,6 +84,45 @@ def _hint(col: str):
     return None
 
 
+def _is_sequence(v: pd.Series) -> bool:
+    return v.nunique() == len(v) and v.max() - v.min() + 1 == len(v)
+
+
+def _shape(col: str, s: pd.Series):
+    n = len(s)
+    if n < MIN_SHAPE_ROWS:
+        return None
+    uniq = s.nunique() / n
+    if pd.api.types.is_datetime64_any_dtype(s):
+        span = s.dt.year.max() - s.dt.year.min()
+        if span >= 15 and s.max() <= pd.Timestamp.now():
+            return "DOB", 1.0, "date_range"
+        return None
+    if pd.api.types.is_numeric_dtype(s):
+        v = pd.to_numeric(s, errors="coerce").dropna()
+        if v.empty or not (v == v.round()).all():
+            return None
+        if uniq >= 0.99 and not _is_sequence(v):
+            return "ID", round(uniq, 3), "uniqueness"
+        if v.min() >= 0 and v.max() <= 120 and v.nunique() >= 15 and 18 <= v.median() <= 80:
+            return "AGE", 1.0, "value_range"
+        return None
+    t = s.astype(str)
+    if uniq >= 0.99 and t.str.contains(r"\s").mean() < 0.1:
+        return "ID", round(uniq, 3), "uniqueness"
+    ratio = float(t.str.match(ADDR_RE).mean())
+    if ratio >= 0.5:
+        return "ADDRESS", round(ratio, 3), "address_pattern"
+    if re.search(NER_SKIP, col):
+        return None
+    ts = t.sample(min(n, 2000), random_state=0)
+    if ts.str.fullmatch(NAME_RE).mean() >= 0.9 and ts.str.contains(ORG_RE).mean() < 0.1:
+        multi = ts.str.split().str.len().mean() >= 1.5
+        if (multi and uniq >= NER_MIN_UNIQUE) or (not multi and s.nunique() >= 200 and uniq >= 0.05):
+            return "PERSON", round(float(ts.str.fullmatch(NAME_RE).mean()), 3), "name_shape"
+    return None
+
+
 def detect(df: pd.DataFrame, ner: NerDetector | None = None) -> list[dict]:
     findings = []
     for col in df.columns:
@@ -100,7 +144,12 @@ def detect(df: pd.DataFrame, ner: NerDetector | None = None) -> list[dict]:
             if label:
                 hits = [{"type": label, "scope": "column", "score": 1.0, "method": "column_name"}]
 
-        if not hits and is_text and ner is not None and s.nunique() / len(s) >= NER_MIN_UNIQUE:
+        if not hits:
+            sh = _shape(col, s)
+            if sh:
+                hits = [{"type": sh[0], "scope": "column", "score": sh[1], "method": sh[2]}]
+
+        if not hits and is_text and ner is not None and not re.search(NER_SKIP, col) and s.nunique() / len(s) >= NER_MIN_UNIQUE:
             vals = sample.astype(str).head(50)
             counts = {}
             for v in vals:
